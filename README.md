@@ -122,6 +122,9 @@ podman exec squidclamav mkdir -p /tmp/test
 # Create a test file
 podman exec squidclamav bash -c "echo 'test content' > /tmp/test.txt"
 
+# Remove any existing output file first (c-icap-client may not overwrite)
+podman exec squidclamav rm -f /tmp/test/result.txt
+
 # Scan it through ICAP (response modification)
 # Use -resp for response modification, -f for the file to scan, -o for output
 podman exec squidclamav c-icap-client -i 127.0.0.1 -p 1344 -s squidclamav \
@@ -150,11 +153,15 @@ podman exec squidclamav mkdir -p /tmp/test
 podman exec squidclamav wget -q -O /tmp/eicar_com.zip \
   https://secure.eicar.org/eicar_com.zip
 
+# Remove any existing output file first (c-icap-client may not overwrite)
+podman exec squidclamav rm -f /tmp/test/scan_result.txt
+
 # Scan it through ICAP (should be detected as virus)
 podman exec squidclamav c-icap-client -i 127.0.0.1 -p 1344 -s squidclamav \
   -resp http://example.com/test -f /tmp/eicar_com.zip -o /tmp/test/scan_result.txt -d 1
 
 # Check the result
+podman exec squidclamav ls -lh /tmp/test/scan_result.txt
 podman exec squidclamav cat /tmp/test/scan_result.txt
 ```
 
