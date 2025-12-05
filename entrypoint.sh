@@ -1,7 +1,11 @@
 #!/bin/bash
+
+# ============================================================================
+# Section 1: Install all required packages
+# ============================================================================
+echo "=== Installing required packages ==="
 apt-get update
 apt-get install -y vim
-apt-get install -y procs
 apt-get install -y squid
 apt-get install -y patch
 apt-get install -y libicapapi-dev
@@ -14,6 +18,14 @@ apt-get install -y make
 apt-get install -y libicapapi5
 apt-get install -y libbz2-dev
 apt-get install -y zlib1g-dev
+apt-get install -y git
+apt-get install -y clamav clamav-daemon
+apt-get install -y net-tools
+
+# ============================================================================
+# Section 2: Configure Squid
+# ============================================================================
+echo "=== Configuring Squid ==="
 echo "icap_enable on" >> /etc/squid/squid.conf
 echo "icap_send_client_ip on" >> /etc/squid/squid.conf
 echo "icap_send_client_username on" >> /etc/squid/squid.conf
@@ -25,34 +37,70 @@ echo "icap_service service_avi_req reqmod_precache icap://127.0.0.1:1344/squidcl
 echo "adaptation_access service_avi_req allow all" >> /etc/squid/squid.conf
 echo "icap_service service_avi_resp respmod_precache icap://127.0.0.1:1344/squidclamav bypass=on" >> /etc/squid/squid.conf
 echo "adaptation_access service_avi_resp allow all" >> /etc/squid/squid.conf
+
+# ============================================================================
+# Section 3: Configure c-icap
+# ============================================================================
+echo "=== Configuring c-icap ==="
 echo "Service squidclamav squidclamav.so" >> /etc/c-icap/c-icap.conf
-sed -i 's,enable_libarchive ,#enable_libarchive ' >> /etc/c-icap/squidclamav.conf
-sed -i 's,banmaxsize ,#banmaxsize ' >> /etc/c-icap/squidclamav.conf
-apt-get -y install git
+sed -i 's/^enable_libarchive /#enable_libarchive /' /etc/c-icap/squidclamav.conf || true
+sed -i 's/^banmaxsize /#banmaxsize /' /etc/c-icap/squidclamav.conf || true
+
+# ============================================================================
+# Section 4: Build and install SquidClamAV
+# ============================================================================
+echo "=== Building and installing SquidClamAV ==="
 rm -rf /usr/lib/x86_64-linux-gnu/c_icap/squidclamav.la
 rm -rf /usr/lib/x86_64-linux-gnu/c_icap/squidclamav.so
 mkdir -p /opt/csw/
 git clone --recursive https://github.com/darold/squidclamav.git "/usr/src/squidclamav"
 cd /usr/src/squidclamav
+git checkout v7.4 2>/dev/null || true
 ./configure --with-c-icap=/etc/c-icap --with-libarchive=/opt/csw/
 make
 make install
-apt-get install -y clamav
-cd /
-wget --user-agent='CVUPDATE/14 (33fde49b-905f-43c6-a51b-e1324cd23280)' https://database.clamav.net/main.cvd https://database.clamav.net/daily.cvd https://database.clamav.net/bytecode.cvd
-cp daily.cvd bytecode.cvd main.cvd /var/lib/clamav/
+
+# ============================================================================
+# Section 5: Setup ClamAV
+# ============================================================================
+echo "=== Setting up ClamAV ==="
+# Create clamav user if it doesn't exist
+if ! id -u clamav >/dev/null 2>&1; then
+    useradd -r -s /bin/false -d /var/lib/clamav clamav
+fi
+# Ensure directory exists and has correct permissions
+mkdir -p /var/lib/clamav
 chown clamav:clamav /var/lib/clamav
-chown clamav:clamav /var/lib/clamav/main.cvd
-chown clamav:clamav /var/lib/clamav/daily.cvd
-chown clamav:clamav /var/lib/clamav/bytecode.cvd
-chmod -R 777 /var/lib/clamav/
-apt-get -y install clamav-daemon
-/etc/init.d/clamav-daemon force-reload
+# Update ClamAV database using freshclam
+freshclam || true
+chown -R clamav:clamav /var/lib/clamav/
+chmod -R 755 /var/lib/clamav/
+# Download EICAR test file
 wget --no-check-certificate https://secure.eicar.org/eicar_com.zip
-apt-get install -y net-tools
-/etc/init.d/squid reload
+
+# ============================================================================
+# Section 6: Start services
+# ============================================================================
+echo "=== Starting services ==="
 mkdir -p /var/run/c-icap
 chown c-icap:c-icap /var/run/c-icap
-/etc/init.d/squid restart
+
+# Start Squid (using systemctl if available, otherwise direct)
+if command -v systemctl >/dev/null 2>&1; then
+    systemctl start squid || /usr/sbin/squid -YC -f /etc/squid/squid.conf
+else
+    /usr/sbin/squid -YC -f /etc/squid/squid.conf
+fi
+
+# Start c-icap
 c-icap -d 10 -f /etc/c-icap/c-icap.conf
+
+# ============================================================================
+# Section 7: Keep container running
+# ============================================================================
+echo "=== All services started. Container is ready. ==="
+echo "=== Squid proxy: port 3128 ==="
+echo "=== c-icap service: port 1344 ==="
+echo "=== Container will keep running. Use 'podman logs -f squidclamav' to view logs. ==="
+# Keep container running (this is intentional - container should stay alive)
 tail -f /dev/null

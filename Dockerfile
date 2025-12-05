@@ -1,9 +1,9 @@
-FROM debian:buster
+FROM debian:bookworm
 COPY entrypoint.sh ./entrypoint.sh
 RUN chmod +x entrypoint.sh
 
 ARG SQUIDCLAMAV_GIT=https://github.com/darold/squidclamav.git
-ARG SQUIDCLAMAV_VERSION=v7.1
+ARG SQUIDCLAMAV_VERSION=v7.4
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -18,6 +18,12 @@ RUN apt-get update \
         gcc \
         make \
         file \
+        autoconf \
+        automake \
+        libtool \
+        pkg-config \
+        iproute2 \
+        curl \
      && apt-mark auto \
         vim \
         wget \
@@ -25,6 +31,7 @@ RUN apt-get update \
 \
      && git clone --recursive "${SQUIDCLAMAV_GIT}" "/usr/src/squidclamav" \
      && (cd /usr/src/squidclamav \
+         && git checkout "${SQUIDCLAMAV_VERSION}" 2>/dev/null || true \
          && ./configure \
          && make -j$(nproc) \
          && make install \
